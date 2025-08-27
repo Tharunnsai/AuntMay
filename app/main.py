@@ -1,14 +1,13 @@
 from fastapi import FastAPI
 
-from .routers.auth import router as auth_router
 from .routers.quiz import router as quiz_router
-from .routers.history import router as history_router
 
+app = FastAPI(
+    title="Quiz Generation Microservice",
+    description="A microservice for generating and evaluating quizzes using AI",
+    version="1.0.0"
+)
 
-app = FastAPI()
-
-app.include_router(auth_router)
 app.include_router(quiz_router)
-app.include_router(history_router)
 
 
