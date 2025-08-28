@@ -1,20 +1,21 @@
 # Quiz Generation Microservice
 
-A focused microservice for generating and evaluating quizzes using AI (Groq LLM).
+A FastAPI-based microservice for generating and evaluating quizzes using AI (Groq LLM).
 
 ## Features
 
-- **Quiz Generation**: Generate multiple-choice quizzes on any topic using AI
+- **Quiz Generation**: Generate multiple-choice quizzes on any topic with configurable difficulty
 - **Quiz Evaluation**: Submit answers and get detailed results with explanations
-- **Difficulty Levels**: Support for different difficulty levels (easy, medium, hard)
-- **Health Check**: Built-in health monitoring endpoint
+- **No Authentication**: Simple, stateless microservice design
+- **AI-Powered**: Uses Groq's Llama3-8b model for intelligent quiz generation
 
 ## API Endpoints
 
 ### Generate Quiz
-```
+```http
 POST /api/quiz/generate
 ```
+
 **Request Body:**
 ```json
 {
@@ -24,15 +25,48 @@ POST /api/quiz/generate
 }
 ```
 
-### Get Quiz
+**Response:**
+```json
+{
+  "message": "Quiz generated successfully",
+  "quizId": "uuid-here"
+}
 ```
+
+### Get Quiz
+```http
 GET /api/quiz/{quiz_id}
 ```
 
-### Submit Quiz Answers
+**Response:**
+```json
+{
+  "quizId": "uuid-here",
+  "topic": "Ancient Rome",
+  "difficulty": "medium",
+  "status": "completed",
+  "questions": [
+    {
+      "questionId": 1,
+      "questionText": "Who was the first Roman emperor?",
+      "options": {
+        "A": "Julius Caesar",
+        "B": "Augustus",
+        "C": "Nero",
+        "D": "Marcus Aurelius"
+      },
+      "correct_answer": {"B": "Augustus"},
+      "explanation": "Augustus was the first Roman emperor, ruling from 27 BC to 14 AD."
+    }
+  ]
+}
 ```
+
+### Submit Quiz
+```http
 POST /api/quiz/{quiz_id}/submit
 ```
+
 **Request Body:**
 ```json
 {
@@ -45,63 +79,90 @@ POST /api/quiz/{quiz_id}/submit
 }
 ```
 
-### Health Check
+**Response:**
+```json
+{
+  "quizId": "uuid-here",
+  "score": 100,
+  "correctAnswers": 1,
+  "totalQuestions": 1,
+  "results": [
+    {
+      "questionId": 1,
+      "yourAnswer": "B",
+      "correctAnswer": "B",
+      "isCorrect": true,
+      "explanation": "Augustus was the first Roman emperor, ruling from 27 BC to 14 AD."
+    }
+  ]
+}
 ```
-GET /api/quiz/health
+
+### Delete Quiz
+```http
+DELETE /api/quiz/{quiz_id}
 ```
 
 ## Setup
 
 1. Install dependencies:
 ```bash
-pip install -r requirements.txt
+pip install fastapi uvicorn langchain-groq langchain-core pydantic
 ```
 
-2. Set environment variables:
+2. Set environment variable for Groq API key:
 ```bash
 export GROQ_API_KEY="your-groq-api-key"
 ```
 
 3. Run the service:
 ```bash
-uvicorn app.main:app --reload
+uvicorn main:app --reload
 ```
 
-## Usage Example
+## Configuration
 
-```python
-import requests
+- **Model**: Uses Groq's `llama3-8b-8192` model
+- **Temperature**: 0 (for consistent output)
+- **Max Questions**: 50 per quiz
+- **Storage**: In-memory (quizzes are lost on restart)
 
-# Generate a quiz
-response = requests.post("http://localhost:8000/api/quiz/generate", json={
-    "topic": "Python Programming",
-    "difficulty": "medium",
-    "num_questions": 3
-})
-quiz_id = response.json()["quizId"]
+## Usage Examples
 
-# Get the quiz
-quiz = requests.get(f"http://localhost:8000/api/quiz/{quiz_id}")
+### Generate a History Quiz
+```bash
+curl -X POST "http://localhost:8000/api/quiz/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "World War II",
+    "difficulty": "hard",
+    "num_questions": 10
+  }'
+```
 
-# Submit answers
-results = requests.post(f"http://localhost:8000/api/quiz/{quiz_id}/submit", json={
+### Get Quiz Details
+```bash
+curl "http://localhost:8000/api/quiz/{quiz-id}"
+```
+
+### Submit Answers
+```bash
+curl -X POST "http://localhost:8000/api/quiz/{quiz-id}/submit" \
+  -H "Content-Type: application/json" \
+  -d '{
     "answers": [
-        {"questionId": 1, "selectedOption": "A"},
-        {"questionId": 2, "selectedOption": "B"},
-        {"questionId": 3, "selectedOption": "C"}
+      {"questionId": 1, "selectedOption": "A"},
+      {"questionId": 2, "selectedOption": "C"}
     ]
-})
+  }'
 ```
 
 ## Architecture
 
-- **Framework**: FastAPI
-- **AI Provider**: Groq (llama3-8b-8192 model)
-- **Storage**: In-memory (for microservice simplicity)
-- **Language**: Python 3.8+
+- **FastAPI**: Web framework for API endpoints
+- **LangChain**: LLM orchestration and prompt management
+- **Groq**: High-performance LLM inference
+- **Pydantic**: Data validation and serialization
+- **In-memory Storage**: Simple dictionary-based storage for quiz data
 
-## Notes
-
-- This is a stateless microservice designed for integration with larger systems
-- Quiz data is stored in-memory and will be lost on service restart
-- For production use, consider adding persistent storage and rate limiting
+This microservice is designed to be lightweight, stateless, and easily integrable into larger applications that need quiz generation capabilities.

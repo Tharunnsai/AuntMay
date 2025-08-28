@@ -1,6 +1,12 @@
-from uuid import UUID
+from uuid import UUID, uuid4
+from typing import List, Dict
 from fastapi import APIRouter, HTTPException
-from typing import List
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_groq import ChatGroq
+from datetime import datetime
+from dotenv import load_dotenv
+load_dotenv()
 
 from ..schemas import (
     GenerateQuizRequest,
@@ -10,81 +16,137 @@ from ..schemas import (
     SubmitQuizResponse,
     QuestionResult,
     QuizQuestion,
+    QuizBundle,
 )
-from ..store import HARDCODED_QUIZ_ID
-
 
 router = APIRouter(prefix="/api/quiz", tags=["quiz"])
 
+# ---- LLM Setup ----
+parser = PydanticOutputParser(pydantic_object=QuizBundle)
 
-# Phase 1 static dataset
-HARDCODED_QUESTIONS: List[QuizQuestion] = [
-    QuizQuestion(
-        questionId=1,
-        questionText="Who was the first emperor of Rome?",
-        options={"A": "Julius Caesar", "B": "Augustus", "C": "Nero", "D": "Constantine"},
-    )
-]
-for i in range(2, 11):
-    HARDCODED_QUESTIONS.append(
-        QuizQuestion(
-            questionId=i,
-            questionText=f"Sample question {i}?",
-            options={"A": "Option A", "B": "Option B", "C": "Option C", "D": "Option D"},
-        )
-    )
+prompt = PromptTemplate(
+    template=(
+        "Generate exactly {num_questions} multiple-choice quiz questions "
+        "about the topic: {topic} with {difficulty} difficulty level.\n"
+        "Each question must have options with keys A, B, C, D.\n"
+        "Return JSON that matches this schema:\n{format_instructions}\n"
+        "Rules:\n"
+        "- correct_answer must be a single-key object like {{\"B\": \"Augustus\"}}\n"
+        "- explanation must be 1–2 sentences.\n"
+        "- For {difficulty} difficulty: adjust question complexity accordingly.\n"
+    ),
+    input_variables=["topic", "num_questions", "difficulty"],
+    partial_variables={"format_instructions": parser.get_format_instructions()},
+)
 
+llm = ChatGroq(model="llama3-8b-8192", temperature=0)
+chain = prompt | llm | parser
+
+# ---- In-memory store ----
+QUIZ_DB: Dict[UUID, QuizBundle] = {}
+
+# ---- Endpoints ----
 
 @router.post("/generate", response_model=GenerateQuizResponse, status_code=202)
 async def generate_quiz(payload: GenerateQuizRequest):
-    return GenerateQuizResponse(message="Quiz generation has been started.", quizId=HARDCODED_QUIZ_ID)
+    """
+    Generate a new quiz with the specified topic, difficulty, and number of questions.
+    """
+    quiz_id = uuid4()
+
+    # Generate quiz with LLM
+    bundle: QuizBundle = chain.invoke({
+        "topic": payload.topic,
+        "num_questions": payload.num_questions,
+        "difficulty": payload.difficulty
+    })
+
+    # Attach metadata
+    bundle.quizId = quiz_id
+    bundle.topic = payload.topic
+    bundle.difficulty = payload.difficulty
+    bundle.createdAt = datetime.utcnow().isoformat()
+
+    QUIZ_DB[quiz_id] = bundle
+
+    return GenerateQuizResponse(
+        message="Quiz generated successfully",
+        quizId=quiz_id
+    )
 
 
 @router.get("/{quiz_id}", response_model=QuizDetailResponse)
 async def get_quiz(quiz_id: UUID):
-    if quiz_id != HARDCODED_QUIZ_ID:
+    """
+    Retrieve a generated quiz by its ID.
+    """
+    quiz = QUIZ_DB.get(quiz_id)
+    if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
+
     return QuizDetailResponse(
-        quizId=HARDCODED_QUIZ_ID,
-        topic="The Roman Empire",
+        quizId=quiz.quizId,
+        topic=quiz.topic,
+        difficulty=quiz.difficulty,
         status="completed",
-        questions=HARDCODED_QUESTIONS,
+        questions=quiz.questions
     )
 
 
 @router.post("/{quiz_id}/submit", response_model=SubmitQuizResponse)
 async def submit_quiz(quiz_id: UUID, payload: SubmitQuizRequest):
-    if quiz_id != HARDCODED_QUIZ_ID:
+    """
+    Submit answers for a quiz and get evaluation results.
+    """
+    quiz = QUIZ_DB.get(quiz_id)
+    if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
-    results: List[QuestionResult] = [
-        QuestionResult(
-            questionId=1,
-            yourAnswer="B",
-            correctAnswer="B",
-            isCorrect=True,
-            explanation=(
-                "Augustus is considered the first Roman Emperor, marking the end of the Roman Republic."
-            ),
-        )
-    ]
-    for i in range(2, 11):
-        is_correct = (i % 2 == 0)
+
+    results: List[QuestionResult] = []
+    correct_count = 0
+
+    # Evaluate each answer
+    for ans in payload.answers:
+        q = next((q for q in quiz.questions if q.questionId == ans.questionId), None)
+        if not q:
+            continue
+
+        # Extract correct answer key/value
+        correct_key, correct_value = list(q.correct_answer.items())[0]
+        is_correct = ans.selectedOption == correct_key
+
+        if is_correct:
+            correct_count += 1
+
         results.append(
             QuestionResult(
-                questionId=i,
-                yourAnswer="A" if not is_correct else "B",
-                correctAnswer="B" if is_correct else "C",
+                questionId=q.questionId,
+                yourAnswer=ans.selectedOption,
+                correctAnswer=correct_key,
                 isCorrect=is_correct,
-                explanation=f"Explanation for question {i}.",
+                explanation=q.explanation
             )
         )
 
+    total_questions = len(quiz.questions)
+    score = int((correct_count / total_questions) * 100)
+
     return SubmitQuizResponse(
-        quizId=HARDCODED_QUIZ_ID,
-        score=80,
-        correctAnswers=8,
-        totalQuestions=10,
-        results=results,
+        quizId=quiz.quizId,
+        score=score,
+        correctAnswers=correct_count,
+        totalQuestions=total_questions,
+        results=results
     )
 
 
+@router.delete("/{quiz_id}")
+async def delete_quiz(quiz_id: UUID):
+    """
+    Delete a quiz from the in-memory store.
+    """
+    if quiz_id not in QUIZ_DB:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    
+    del QUIZ_DB[quiz_id]
+    return {"message": "Quiz deleted successfully"}
