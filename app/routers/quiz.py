@@ -75,6 +75,37 @@ async def generate_quiz(payload: GenerateQuizRequest):
     )
 
 
+@router.post("/generate-and-return", response_model=QuizDetailResponse, status_code=201)
+async def generate_quiz_and_return(payload: GenerateQuizRequest):
+    """
+    Generate a new quiz and return the full quiz payload instead of just the ID.
+    """
+    quiz_id = uuid4()
+
+    # Generate quiz with LLM
+    bundle: QuizBundle = chain.invoke({
+        "topic": payload.topic,
+        "num_questions": payload.num_questions,
+        "difficulty": payload.difficulty
+    })
+
+    # Attach metadata
+    bundle.quizId = quiz_id
+    bundle.topic = payload.topic
+    bundle.difficulty = payload.difficulty
+    bundle.createdAt = datetime.utcnow().isoformat()
+
+    QUIZ_DB[quiz_id] = bundle
+
+    return QuizDetailResponse(
+        quizId=bundle.quizId,
+        topic=bundle.topic,
+        difficulty=bundle.difficulty,
+        status="completed",
+        questions=bundle.questions
+    )
+
+
 @router.get("/{quiz_id}", response_model=QuizDetailResponse)
 async def get_quiz(quiz_id: UUID):
     """
