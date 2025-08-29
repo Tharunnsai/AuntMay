@@ -40,7 +40,9 @@ prompt = PromptTemplate(
 )
 
 llm = ChatGroq(model="llama3-8b-8192", temperature=0)
-chain = prompt | llm | parser
+# Use structured outputs to reduce JSON parsing errors from the LLM
+structured_llm = llm.with_structured_output(QuizBundle)
+chain = prompt | structured_llm
 
 # ---- In-memory store ----
 QUIZ_DB: Dict[UUID, QuizBundle] = {}
