@@ -22,11 +22,16 @@ class QuizQuestion(BaseModel):
     explanation: str
 
 
-class QuizBundle(BaseModel):
-    quizId: UUID
+# Schema for LLM output (used with PydanticOutputParser)
+class QuizBundleLLM(BaseModel):
     topic: str
-    questions: List[QuizQuestion]
     difficulty: str
+    questions: List[QuizQuestion]
+
+
+# Schema for backend (with metadata, for API responses)
+class QuizBundle(QuizBundleLLM):
+    quizId: UUID
     createdAt: str
 
 

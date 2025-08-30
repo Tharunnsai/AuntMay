@@ -17,12 +17,13 @@ from ..schemas import (
     QuestionResult,
     QuizQuestion,
     QuizBundle,
+    QuizBundleLLM,
 )
 
 router = APIRouter(prefix="/api/quiz", tags=["quiz"])
 
 # ---- LLM Setup ----
-parser = PydanticOutputParser(pydantic_object=QuizBundle)
+parser = PydanticOutputParser(pydantic_object=QuizBundleLLM)
 
 prompt = PromptTemplate(
     template=(
@@ -41,7 +42,7 @@ prompt = PromptTemplate(
 
 llm = ChatGroq(model="llama3-8b-8192", temperature=0)
 # Use structured outputs to reduce JSON parsing errors from the LLM
-structured_llm = llm.with_structured_output(QuizBundle)
+structured_llm = llm.with_structured_output(QuizBundleLLM)
 chain = prompt | structured_llm
 
 # ---- In-memory store ----
@@ -57,17 +58,20 @@ async def generate_quiz(payload: GenerateQuizRequest):
     quiz_id = uuid4()
 
     # Generate quiz with LLM
-    bundle: QuizBundle = chain.invoke({
+    raw_bundle: QuizBundleLLM = chain.invoke({
         "topic": payload.topic,
         "num_questions": payload.num_questions,
         "difficulty": payload.difficulty
     })
 
-    # Attach metadata
-    bundle.quizId = quiz_id
-    bundle.topic = payload.topic
-    bundle.difficulty = payload.difficulty
-    bundle.createdAt = datetime.utcnow().isoformat()
+    # Attach metadata (convert to full QuizBundle)
+    bundle = QuizBundle(
+        quizId=quiz_id,
+        topic=raw_bundle.topic,
+        difficulty=raw_bundle.difficulty,
+        createdAt=datetime.utcnow().isoformat(),
+        questions=raw_bundle.questions
+    )
 
     QUIZ_DB[quiz_id] = bundle
 
@@ -85,17 +89,20 @@ async def generate_quiz_and_return(payload: GenerateQuizRequest):
     quiz_id = uuid4()
 
     # Generate quiz with LLM
-    bundle: QuizBundle = chain.invoke({
+    raw_bundle: QuizBundleLLM = chain.invoke({
         "topic": payload.topic,
         "num_questions": payload.num_questions,
         "difficulty": payload.difficulty
     })
 
-    # Attach metadata
-    bundle.quizId = quiz_id
-    bundle.topic = payload.topic
-    bundle.difficulty = payload.difficulty
-    bundle.createdAt = datetime.utcnow().isoformat()
+    # Attach metadata (convert to full QuizBundle)
+    bundle = QuizBundle(
+        quizId=quiz_id,
+        topic=raw_bundle.topic,
+        difficulty=raw_bundle.difficulty,
+        createdAt=datetime.utcnow().isoformat(),
+        questions=raw_bundle.questions
+    )
 
     QUIZ_DB[quiz_id] = bundle
 
