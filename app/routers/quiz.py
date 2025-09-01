@@ -40,7 +40,7 @@ prompt = PromptTemplate(
     partial_variables={"format_instructions": parser.get_format_instructions()},
 )
 
-llm = ChatGroq(model="llama3-8b-8192", temperature=0)
+llm = ChatGroq(model="deepseek-r1-distill-llama-70b", temperature=0)
 # Use structured outputs to reduce JSON parsing errors from the LLM
 structured_llm = llm.with_structured_output(QuizBundleLLM)
 chain = prompt | structured_llm
