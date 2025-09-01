@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict
+from typing import List, Dict, Optional
 from uuid import UUID
 
 
@@ -55,7 +55,7 @@ class SubmitQuizRequest(BaseModel):
 class QuestionResult(BaseModel):
     questionId: int
     yourAnswer: str
-    correctAnswer: str
+    correctOption: str
     isCorrect: bool
     explanation: str
 
@@ -66,5 +66,38 @@ class SubmitQuizResponse(BaseModel):
     correctAnswers: int
     totalQuestions: int
     results: List[QuestionResult]
+
+
+# New schemas for agentic quiz generation
+class ResearchInfo(BaseModel):
+    source: str
+    content: str
+    relevance_score: float
+
+
+class TopicResearch(BaseModel):
+    topic: str
+    research_summary: str
+    key_concepts: List[str]
+    difficulty_appropriate_facts: List[str]
+    sources: List[ResearchInfo]
+
+
+class AgenticQuizRequest(BaseModel):
+    topic: str
+    difficulty: str = Field(default="medium", description="Quiz difficulty level")
+    num_questions: int = Field(gt=0, le=50, description="Number of questions to generate")
+    research_depth: str = Field(default="comprehensive", description="Research depth: basic, comprehensive, or expert")
+
+
+class AgenticQuizResponse(BaseModel):
+    quizId: UUID
+    topic: str
+    difficulty: str
+    status: str
+    questions: List[QuizQuestion]
+    research_summary: str
+    key_concepts: List[str]
+    sources: List[ResearchInfo]
 
 
